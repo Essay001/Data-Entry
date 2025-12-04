@@ -211,52 +211,115 @@ def main(page: ft.Page):
 
         refresh_list()
 
-        # --- Check-In Dialog Logic ---
-        def show_add_dialog(e):
-            # Form Fields
-            name_field = ft.TextField(label="Where are you eating?", icon="search", border_radius=30)
+        # --- Check-In Flow Logic ---
+        def show_checkin_flow(e):
+            # Shared State for the flow
+            selected_place = {"name": "", "location": ""}
             
-            # Location Field with GPS Button
-            loc_field = ft.TextField(label="Location", value="Current Location", expand=True, text_size=12)
-                
-            # Fish Rating Slider
-            rating_label = ft.Text("Rating: 3 Fish 🐟🐟🐟", weight="bold")
-            def slider_change(e):
-                val = int(e.control.value)
-                rating_label.value = f"Rating: {val} Fish " + ("🐟" * val)
-                rating_label.update()
+            # -- UI Components used across steps --
+            # Step 1: Search
+            search_field = ft.TextField(label="Search for a spot", icon="search", autofocus=True)
+            search_results = ft.Column()
 
-            rating_slider = ft.Slider(
-                min=1, max=5, divisions=4, value=3, 
-                label="{value}", on_change=slider_change, active_color="amber"
-            )
-            
+            # Step 2: Manual Add
+            new_name_field = ft.TextField(label="Venue Name", hint_text="e.g. Joe's Pub")
+            new_addr_field = ft.TextField(label="Location", hint_text="City, State")
+
+            # Step 3: Review
+            rating_slider = ft.Slider(min=1, max=5, divisions=4, value=3, label="{value}", active_color="amber")
             crisp_field = ft.Dropdown(
                 label="Crispiness",
                 options=[ft.dropdown.Option("Soggy"), ft.dropdown.Option("Decent"), ft.dropdown.Option("Crunchy"), ft.dropdown.Option("Perfect")],
             )
             note_field = ft.TextField(label="What did you think?", multiline=True, min_lines=3)
-            
-            # File Picker
             uploaded_file_text = ft.Text("Add Photo", size=12, weight="bold", color="blue")
+            
             def pick_files_result(e: ft.FilePickerResultEvent):
                 if e.files:
                     uploaded_file_text.value = "Photo Attached!"
                     uploaded_file_text.color = "green"
                     uploaded_file_text.update()
-
             file_picker = ft.FilePicker(on_result=pick_files_result)
             page.overlay.append(file_picker)
 
-            def save_review(e):
-                if not name_field.value: return
+            # -- Transitions --
+            def go_to_search(e=None):
+                # Reset content for search
+                page.dialog.title = ft.Text("Find a Location")
+                page.dialog.content = ft.Column([
+                    search_field,
+                    ft.Container(height=200, content=ft.Column([search_results], scroll=ft.ScrollMode.AUTO)),
+                    ft.TextButton("Can't find it? Add manually", on_click=go_to_manual_add)
+                ], height=400)
+                page.dialog.actions = [ft.TextButton("Cancel", on_click=lambda e: close_dialog())]
+                page.dialog.update()
+
+            def go_to_manual_add(e=None):
+                page.dialog.title = ft.Text("Add New Location")
+                page.dialog.content = ft.Column([
+                    ft.Text("Enter the venue details below:"),
+                    new_name_field,
+                    new_addr_field
+                ], height=300)
+                page.dialog.actions = [
+                    ft.TextButton("Back", on_click=go_to_search),
+                    ft.ElevatedButton("Next", bgcolor="amber700", color="white", 
+                                    on_click=lambda e: select_place(new_name_field.value, new_addr_field.value))
+                ]
+                page.dialog.update()
+
+            def select_place(name, loc):
+                if not name: return
+                selected_place['name'] = name
+                selected_place['location'] = loc if loc else "Unknown Location"
+                go_to_review()
+
+            def go_to_review():
+                page.dialog.title = ft.Text("Check-In")
                 
+                # Dynamic Fish Label
+                rating_label = ft.Text("Rating: 3 Fish 🐟🐟🐟", weight="bold")
+                def slider_change(e):
+                    val = int(e.control.value)
+                    rating_label.value = f"Rating: {val} Fish " + ("🐟" * val)
+                    rating_label.update()
+                rating_slider.on_change = slider_change
+
+                page.dialog.content = ft.Column([
+                    ft.Container(
+                        padding=10, bgcolor="amber50", border_radius=10,
+                        content=ft.Row([
+                            ft.Icon("location_on", color="amber900"),
+                            ft.Column([
+                                ft.Text(selected_place['name'], weight="bold", size=16),
+                                ft.Text(selected_place['location'], size=12, color="grey")
+                            ])
+                        ])
+                    ),
+                    ft.Divider(),
+                    note_field,
+                    ft.Container(height=10),
+                    rating_label,
+                    rating_slider,
+                    ft.Row([
+                        ft.IconButton("camera_alt", on_click=lambda _: file_picker.pick_files()),
+                        uploaded_file_text
+                    ]), 
+                    crisp_field, 
+                ], height=450, scroll=ft.ScrollMode.AUTO)
+                
+                page.dialog.actions = [
+                    ft.ElevatedButton("Confirm Check-In", bgcolor="amber700", color="white", on_click=finalize_checkin)
+                ]
+                page.dialog.update()
+
+            def finalize_checkin(e):
                 reviews.insert(0, {
                     'id': int(datetime.datetime.now().timestamp()),
-                    'user_name': "Party Marty", # Current user
+                    'user_name': "Party Marty",
                     'user_avatar': "https://loremflickr.com/100/100/man,smile",
-                    'restaurant': name_field.value,
-                    'location': "Milwaukee, WI", # Mock GPS
+                    'restaurant': selected_place['name'],
+                    'location': selected_place['location'],
                     'rating': int(rating_slider.value),
                     'crispiness': crisp_field.value if crisp_field.value else "Decent",
                     'tartar': "Good",
@@ -271,27 +334,46 @@ def main(page: ft.Page):
                 page.dialog.open = False
                 page.update()
 
+            def close_dialog():
+                page.dialog.open = False
+                page.update()
+
+            # Search Logic
+            def perform_search(e):
+                search_results.controls.clear()
+                query = search_field.value.lower()
+                if query:
+                    # Mock search
+                    matches = [s for s in NEARBY_SPOTS if query in s['name'].lower()]
+                    
+                    # Create clickable list items
+                    for place in matches:
+                        search_results.controls.append(
+                            ft.ListTile(
+                                title=ft.Text(place['name'], weight="bold"),
+                                subtitle=ft.Text(f"{place.get('dist', 'Unknown')} away"),
+                                leading=ft.Icon("restaurant"),
+                                on_click=lambda e, p=place: select_place(p['name'], "Nearby")
+                            )
+                        )
+                    # Fake "no results" helper
+                    if not matches:
+                         search_results.controls.append(ft.Text("No nearby matches found.", color="grey", italic=True))
+                search_results.update()
+
+            search_field.on_change = perform_search
+
+            # Initialize Dialog
             page.dialog = ft.AlertDialog(
-                title=ft.Text("Check-In", weight="bold"),
-                content=ft.Column([
-                    name_field,
-                    ft.Row([ft.Icon("location_on", size=16), loc_field]),
-                    ft.Divider(),
-                    note_field,
-                    rating_label, 
-                    rating_slider,
-                    ft.Row([
-                        ft.IconButton("camera_alt", on_click=lambda _: file_picker.pick_files()),
-                        uploaded_file_text
-                    ]), 
-                    crisp_field, 
-                ], height=400, scroll=ft.ScrollMode.AUTO),
-                actions=[
-                    ft.ElevatedButton("Confirm Check-In", bgcolor="amber700", color="white", on_click=save_review)
-                ]
+                title=ft.Text("Find a Location"),
+                content=ft.Container(), # Placeholder
+                actions=[]
             )
             page.dialog.open = True
             page.update()
+            
+            # Start at step 1
+            go_to_search()
 
         return ft.Stack([
             ft.Column([
@@ -313,7 +395,7 @@ def main(page: ft.Page):
                     color="white",
                     height=50,
                     style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=30)),
-                    on_click=show_add_dialog
+                    on_click=show_checkin_flow
                 )
             )
         ])
