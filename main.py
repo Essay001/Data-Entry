@@ -70,6 +70,8 @@ BADGES = [
 FRIENDS = ['Big Tony', 'Cousin Sal', 'Fishing Fred', 'Aunt Linda']
 
 def main(page: ft.Page):
+    print("Starting Party Marty's App...") # Debug message for console
+    
     # --- Page Configuration ---
     page.title = "Party Marty's Fry Finder"
     page.theme_mode = ft.ThemeMode.LIGHT
