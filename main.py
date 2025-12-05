@@ -529,3 +529,6 @@ def main(page: ft.Page):
     navigate_to(0)
 
 ft.app(target=main)
+
+ft.app(target=main)
+
